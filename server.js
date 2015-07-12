@@ -9,6 +9,7 @@ var CONTENT_MODIFICATION_DATE = "Sat, 29 Oct 1994 19:43:31 GMT"; //for testing i
 var PUBLIC_DIRECTORY = "./public/";
 var POST_URI = "/elements";
 var HTML_SUFFIX = ".html";
+var INDEX_FILENAME = "index";
 var SUPPORTED_HTTP_METHODS = {
 
   GET: "GET",
@@ -110,23 +111,96 @@ function doPOST(request, response) {
       return;
     }
     var elementHTML = getElementHTML(postData);
+    var indexHTML = getIndexHTML();
 
-    console.log(postData);
+    console.log(indexHTML);
 
-    fs.writeFile(PUBLIC_DIRECTORY + postData.elementName + HTML_SUFFIX, elementHTML, function(error){
+    indexHTML = parseIndex(postData, indexHTML);
 
-      if(error) {
+    console.log(elementHTML);
+    console.log(indexHTML);
 
-        doError(response, error, 500);
+    if(elementHTML && indexHTML) {
 
-      }else{
+      // writeFileToFileSystem(postData.elementName, elementHTML, response);
+      // writeFileToFileSystem(INDEX_FILENAME + HTML_SUFFIX, indexHTML, response);
+      response.setHeader("Content-Type", "application/json");
+      response.write('{"success" : true}');
 
-        response.setHeader("Content-Type", "application/json");
-        response.write('{"success" : true}');
-        response.end();
-      }
-    });
+    } else {
+
+      doError(response, null, 500);
+    }
+
+    response.end();
   });
+};
+
+function writeFileToFileSystem(fileName, content, response) {
+
+  fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
+
+    if(error) {
+
+      doError(response, error, 500);
+    }
+  });
+};
+
+function getIndexHTML() {
+
+  var indexHTML = null;
+
+  fs.exists(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, function(exists) {
+
+    if(exists) {
+
+      fs.readFile(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, 'utf8', function (error, text) {
+
+        if(error) {
+
+          doError(response, error, 500);
+        }
+
+        indexHTML = text;
+
+        console.log(text);
+
+        // return parseIndex(data, indexHTML);
+        return indexHTML;
+      });
+
+    } else {
+
+      do404(response);
+    }
+  });
+};
+
+function parseIndex(data, indexHTML) {
+
+  var out = null;
+  var h3Index1 = indexHTML.indexOf("<h3>");
+  var h3Index2 = indexHTML.indexOf("</h3>");
+  var foreString = indexHTML.substring(0, h3Index1 + 4);
+  var backString = indexHTML. substring(h3Index2);
+  var textString = indexHTML.substring(h3Index1 + 4, h3Index2);
+  var areIndex = textString.lastIndexOf("are");
+  var numberString = textString.substring(areIndex + 3);
+  var parsedNumber = parseInt(numberString);
+
+  out = foreString + "These are "+ (parsedNumber + 1) + backString;
+
+  var liIndex = out.lastIndexOf("</li>");
+  foreString = out.substring(0, liIndex + 5);
+  backString = out.substring(liIndex + 5);
+
+  out = foreString + '<li><a href="/' + data.elementName.toLowerCase() + HTML_SUFFIX + '">' + data.elementName +
+        '</a></li>' + backString;
+
+  console.log("INDEX : " + out);
+
+  return out;
 };
 
 function getElementHTML(data) {
@@ -134,7 +208,7 @@ function getElementHTML(data) {
   return  "<!DOCTYPE html> <html lang='en'> <head> <meta charset='UTF-8'> <title>The Elements - " + data.elementName +
           "</title> <link rel='stylesheet' href='/css/styles.css'> </head> <body> <h1>" + data.elementName +
           "</h1> <h2>" + data.elementSymbol + "</h2> <h3>Atomic number " + data.elementAtomicNumber +
-          "</h3> <p>"+ data.elementDescription +"</p> <p><a href="/">back</a></p> </body> </html>";
+          "</h3> <p>"+ data.elementDescription + "</p> <p><a href="/">back</a></p> </body> </html>";
 };
 
 function isPostDataValid(data) {
