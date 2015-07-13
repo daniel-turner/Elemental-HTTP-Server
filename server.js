@@ -14,6 +14,7 @@ var SUPPORTED_HTTP_METHODS = {
 
   GET: "GET",
   POST: "POST",
+  PUT: "PUT",
   HEAD: "HEAD"
 };
 
@@ -64,7 +65,7 @@ function do404(response) {
 
 function doGET(request, response) {
 
-  var uri = request.url;
+  var uri = request.url.toLowerCase();
 
   if(uri === "/") {
 
@@ -86,11 +87,11 @@ function doGET(request, response) {
 
 function doPOST(request, response) {
 
-  var uri = request.url;
+  var uri = request.url.toLowerCase();
 
   if(uri !== POST_URI) {
 
-    doError(response, null, 400);
+    doError(response, "Incorrect URI for POST.", 400);
     return;
   }
 
@@ -105,35 +106,38 @@ function doPOST(request, response) {
 
     var postData = querystring.parse(requestBody);
 
-    if(!isPostDataValid(postData)) {
+    if(!isPostPutDataValid(postData)) {
 
-      doError(response, null, 400);
+      doError(response, "Invalid date submitted to POST.", 400);
       return;
     }
-    var elementHTML = getElementHTML(postData);
-    var indexHTML = getIndexHTML();
 
-    console.log(indexHTML);
+    httpPOSTTransformFiles(postData, response);
+  });
+};
 
-    indexHTML = parseIndex(postData, indexHTML);
+function doPUT(request, response) {
 
-    console.log(elementHTML);
-    console.log(indexHTML);
+  var requestBody = "";
 
-    if(elementHTML && indexHTML) {
+  request.on('data', function(chunk) {
 
-      // writeFileToFileSystem(postData.elementName, elementHTML, response);
-      // writeFileToFileSystem(INDEX_FILENAME + HTML_SUFFIX, indexHTML, response);
-      response.setHeader("Content-Type", "application/json");
-      response.write('{"success" : true}');
+    requestBody += chunk.toString();
+  });
 
-    } else {
+  request.on('end', function() {
 
-      doError(response, null, 500);
+    var putData = querystring.parse(requestBody);
+
+    if(!isPostPutDataValid(putData)) {
+
+      doError(response, "Invalid data submitted to PUT.", 400);
+      return;
     }
 
-    response.end();
-  });
+    httpPUTProcessFile(putData, response);
+  })
+
 };
 
 function writeFileToFileSystem(fileName, content, response) {
@@ -147,9 +151,7 @@ function writeFileToFileSystem(fileName, content, response) {
   });
 };
 
-function getIndexHTML() {
-
-  var indexHTML = null;
+function httpPOSTTransformFiles(postData, response) {
 
   fs.exists(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, function(exists) {
 
@@ -162,12 +164,7 @@ function getIndexHTML() {
           doError(response, error, 500);
         }
 
-        indexHTML = text;
-
-        console.log(text);
-
-        // return parseIndex(data, indexHTML);
-        return indexHTML;
+        processPost(postData, text, response);
       });
 
     } else {
@@ -177,7 +174,73 @@ function getIndexHTML() {
   });
 };
 
-function parseIndex(data, indexHTML) {
+function httpPUTProcessFile(putData, response) {
+
+  var uri = putData.elementName.toLowerCase();
+
+  fs.exists(PUBLIC_DIRECTORY + uri + HTML_SUFFIX, function(exists) {
+
+    if(exists) {
+
+      processPut(putData, response);
+
+    } else {
+
+      doError(response, '{ "error" : "resource does not exist" }', 500);
+    }
+  })
+};
+
+function processPost(postData, indexHTML, response) {
+
+  fs.exists(PUBLIC_DIRECTORY + postData.elementName.toLowerCase() + HTML_SUFFIX, function(exists) {
+
+    if(!exists) {
+
+      doError(response, "Please use PUT to update an existing resource", 500);
+      return;
+    }
+  });
+
+  var elementHTML = getElementHTML(postData);
+  indexHTML = getIndexHTML(postData, indexHTML);
+
+  if(elementHTML && indexHTML) {
+
+    writeFileToFileSystem(postData.elementName.toLowerCase(), elementHTML, response);
+    writeFileToFileSystem(INDEX_FILENAME, indexHTML, response);
+    response.setHeader("Content-Type", "application/json");
+    response.write('{"success" : true}');
+
+  } else {
+
+    doError(response, null, 500);
+    return;
+  }
+
+  response.end();
+};
+
+function processPut(putData, response) {
+
+  var elementHTML = getElementHTML(putData);
+
+  if(elementHTML) {
+
+    writeFileToFileSystem(putData,elementName.toLowerCase(), elementHTML, response);
+    response.setHeader("Content-Type", "application/json");
+    response.write('{"success" : true}');
+
+  } else {
+
+    doError(response, null, 500);
+    return;
+  }
+
+  response.end();
+};
+
+function getIndexHTML(postData, indexHTML) {
 
   var out = null;
   var h3Index1 = indexHTML.indexOf("<h3>");
@@ -195,23 +258,25 @@ function parseIndex(data, indexHTML) {
   foreString = out.substring(0, liIndex + 5);
   backString = out.substring(liIndex + 5);
 
-  out = foreString + '<li><a href="/' + data.elementName.toLowerCase() + HTML_SUFFIX + '">' + data.elementName +
+  out = foreString + '<li><a href="/' + postData.elementName.toLowerCase() + HTML_SUFFIX + '">' + postData.elementName +
         '</a></li>' + backString;
 
-  console.log("INDEX : " + out);
+  // console.log("INDEX : " + out);
 
   return out;
 };
 
 function getElementHTML(data) {
 
+  console.log(data.elementDescription);
+
   return  "<!DOCTYPE html> <html lang='en'> <head> <meta charset='UTF-8'> <title>The Elements - " + data.elementName +
           "</title> <link rel='stylesheet' href='/css/styles.css'> </head> <body> <h1>" + data.elementName +
           "</h1> <h2>" + data.elementSymbol + "</h2> <h3>Atomic number " + data.elementAtomicNumber +
-          "</h3> <p>"+ data.elementDescription + "</p> <p><a href="/">back</a></p> </body> </html>";
+          "</h3> <p>"+ data.elementDescription + '</p> <p><a href="/">back</a></p> </body> </html>';
 };
 
-function isPostDataValid(data) {
+function isPostPutDataValid(data) {
 
   if( data.hasOwnProperty("elementName") &&
       data.hasOwnProperty("elementSymbol") &&
@@ -254,6 +319,11 @@ function clientConnected(request, response) { //'request' listener
   if(request.method === SUPPORTED_HTTP_METHODS.POST) {
 
     doPOST(request, response);
+  }
+
+  if(request.method === SUPPORTED_HTTP_METHODS.PUT) {
+
+    doPUT(request, response);
   }
 };
 
