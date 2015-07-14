@@ -1,7 +1,7 @@
 var http = require('http');
 var fs = require('fs');
 var querystring = require('querystring');
-var resources = require('./public/resources.js');
+// var resources = require('./public/resources.js');
 var PORT = 6969;
 var CONTENT_MODIFICATION_DATE = "Sat, 29 Oct 1994 19:43:31 GMT"; //for testing if-modified-since functionality
 // var CONTENT_TYPE_HTML = "text/html";
@@ -19,64 +19,69 @@ var SUPPORTED_HTTP_METHODS = {
   HEAD: "HEAD"
 };
 
-function writeFileToResponse(response, uri) {
-
-  fs.readFile(PUBLIC_DIRECTORY + uri, function (error, data) {
-
-    if(error) {
-
-      doError(response, error, 500);
-    }
-
-    response.write(data);
-    response.end();
-    console.log("served " + uri);
-  });
-};
-
-function writeFileToFileSystem(fileName, content, response) {
-
-  fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
-
-    if(error) {
-
-      doError(response, error, 500);
-      return;
-    }
-  });
-};
-
-function doError(response, error, statusCode) {
-
-  response.statusCode = statusCode;
-
-  if(error) {
-
-    response.write(error);
-  }
-
-  response.end();
-};
-
-function do404(response) {
-
-  var uri = "404.html";
-  response.statusCode = 404;
+/**
+ * Reads file at the given uri and returns the content to the given callback
+ * @param  {[type]}   uri      [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
+function writeFileToResponse(uri, callback) {
 
   fs.exists(PUBLIC_DIRECTORY + uri, function(exists) {
 
     if(exists) {
 
-      writeFileToResponse(response, uri);
+      fs.readFile(PUBLIC_DIRECTORY + uri, function (error, data) {
+
+        if(error) {
+
+          callback({status: 500, message: error.message }, error.message);
+
+        } else {
+
+          callback(null, data);
+          console.log("served " + uri);
+        }
+      });
 
     } else {
 
-      response.end();
+      callback({ status: 404, message: "resource does not exist"}, "resource does not exist");
+    }
+  });
+
+
+};
+
+function writeFileToFileSystem(fileName, content, callback) {
+
+  fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
+
+    if(error) {
+
+      doError(error, 500, callback);
+      return;
     }
   });
 };
 
-function doGET(request, response) {
+
+function doError(error, statusCode, callback) {
+
+  callback(statusCode, error);
+};
+
+function do404(callback) {
+
+  var uri = "404.html";
+
+  writeFileToResponse(uri, function(error, data) {
+
+    callback(404, data);
+  });
+};
+
+function doGET(request, callback) {
 
   var uri = request.url.toLowerCase();
 
@@ -85,26 +90,37 @@ function doGET(request, response) {
     uri = "index.html";
   }
 
-  fs.exists(PUBLIC_DIRECTORY + uri, function(exists){
+  fs.exists(PUBLIC_DIRECTORY + uri, function(exists) {
 
     if(exists){
 
-      writeFileToResponse(response, uri);
+      // writeFileToResponse(response, uri);
+      writeFileToResponse(uri, function(error, data) {
+
+        if(error) {
+
+          callback(error.status, error.message);
+
+        } else {
+
+          callback(200, data);
+        }
+      });
 
     }else{
 
-      do404(response);
+      do404(callback);
     }
   });
 };
 
-function doPOST(request, response) {
+function doPOST(request, callback) {
 
   var uri = request.url.toLowerCase();
 
   if(uri !== POST_URI) {
 
-    doError(response, "Incorrect URI for POST.", 400);
+    doError("Incorrect URI for POST.", 400, callback);
     return;
   }
 
@@ -121,7 +137,7 @@ function doPOST(request, response) {
 
     if(!isPostPutDataValid(postData)) {
 
-      doError(response, "Invalid date submitted to POST.", 400);
+      doError("Invalid data submitted to POST.", 400, callback);
       return;
     }
 
@@ -129,12 +145,12 @@ function doPOST(request, response) {
 
       if(exists) {
 
-        doError(response, "Please use PUT to update an existing resource", 500);
+        doError("Please use PUT to update an existing resource", 403, callback);
         return;
 
       } else {
 
-        httpPOSTPrepareContent(postData, response);
+        httpPOSTPrepareContent(postData, callback);
       }
     });
   });
@@ -163,32 +179,20 @@ function doPUT(request, response) {
   });
 };
 
-function doDELETE(request, response) {
+function doDELETE(request, callback) {
 
   var uri = request.url.toLowerCase() + HTML_SUFFIX;
-  console.log(uri);
 
   if(uri === "/" || uri === "index.html") {
 
-    doError(response, "Cannot delete index.html", 403);
+    doError("Cannot delete index.html", 403, callback);
     return;
   }
 
-  httpDELETEExecute(uri, response);
-
-  // request.on('end', function() {
-
-  //   if(!request.url) {
-
-  //     doError(response, "Invalid data submitted to DELETE.", 400);
-  //     return;
-  //   }
-
-  //   httpDELETEExecute(uri, response);
-  // });
+  httpDELETEExecute(uri, callback);
 };
 
-function httpPOSTPrepareContent(postData, response) {
+function httpPOSTPrepareContent(postData, callback) {
 
   fs.exists(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, function(exists) {
 
@@ -198,23 +202,23 @@ function httpPOSTPrepareContent(postData, response) {
 
         if(error) {
 
-          doError(response, error, 500);
+          doError(error, 500, callback);
         }
 
         var elementHTML = getElementHTML(postData);
         indexHTML = addToIndexHTML(postData, indexHTML);
 
-        httpPOSTExecute(postData, indexHTML, elementHTML, response);
+        httpPOSTExecute(postData, indexHTML, elementHTML, callback);
       });
 
     } else {
 
-      do404(response);
+      do404(callback);
     }
   });
 };
 
-function httpPUTPrepareContent(putData, response) {
+function httpPUTPrepareContent(putData, callback) {
 
   var uri = putData.elementName.toLowerCase();
   var elementHTML = null;
@@ -224,50 +228,47 @@ function httpPUTPrepareContent(putData, response) {
     if(exists) {
 
       elementHTML = getElementHTML(putData);
-      httpPUTExecute(putData, elementHTML, response);
+      httpPUTExecute(putData, elementHTML, callback);
 
     } else {
 
-      doError(response, '{ "error" : "resource does not exist" }', 500);
+      doError('{ "error" : "resource does not exist" }', 500, callback);
       return;
     }
   })
 };
 
-function httpPOSTExecute(postData, indexHTML, elementHTML, response) {
+function httpPOSTExecute(postData, indexHTML, elementHTML, callback) {
 
   if(elementHTML && indexHTML) {
 
-    writeFileToFileSystem(postData.elementName.toLowerCase(), elementHTML, response);
-    writeFileToFileSystem(INDEX_FILENAME, indexHTML, response);
-    response.setHeader("Content-Type", "application/json");
-    response.write('{"success" : true}');
-    response.end();
+    writeFileToFileSystem(postData.elementName.toLowerCase(), elementHTML, callback);
+    writeFileToFileSystem(INDEX_FILENAME, indexHTML, callback);
+    callback(200, JSON.stringify({ "success": true }));
 
   } else {
 
-    doError(response, null, 500);
+    doError(null, 500, callback);
     return;
   }
 };
 
-function httpPUTExecute(putData, elementHTML, response) {
+function httpPUTExecute(putData, elementHTML, callback) {
 
   if(elementHTML) {
 
-    writeFileToFileSystem(putData.elementName.toLowerCase(), elementHTML, response);
-    response.setHeader("Content-Type", "application/json");
-    response.write('{"success" : true}');
-    response.end();
+    writeFileToFileSystem(putData.elementName.toLowerCase(), elementHTML, callback);
+
+    callback(200, JSON.stringify({ "success": true }));
 
   } else {
 
-    doError(response, null, 500);
+    doError(null, 500, callback);
     return;
   }
 };
 
-function httpDELETEExecute(uri, response) {
+function httpDELETEExecute(uri, callback) {
 
   fs.exists(PUBLIC_DIRECTORY + uri, function(exists){
 
@@ -277,7 +278,7 @@ function httpDELETEExecute(uri, response) {
 
         if(error) {
 
-          doError(response, "Server could not delete file", 500);
+          doError("Server could not delete file", 500, callback);
           return;
 
         } else {
@@ -292,7 +293,7 @@ function httpDELETEExecute(uri, response) {
 
                 if(error) {
 
-                  doError(response, error, 500);
+                  doError(error, 500, callback);
                   return;
                 }
 
@@ -300,22 +301,20 @@ function httpDELETEExecute(uri, response) {
 
                 if(indexHTML) {
 
-                  writeFileToFileSystem(INDEX_FILENAME, indexHTML, response);
+                  writeFileToFileSystem(INDEX_FILENAME, indexHTML, callback);
 
                 } else {
 
-                  doError(response,"Could not write to index", 500);
+                  doError("Could not write to index", 500, callback);
                   return;
                 }
 
-                response.setHeader("Content-Type", "application/json");
-                response.write('{"success" : true}');
-                response.end();
+                callback(200, JSON.stringify({ "success": true }));
               });
 
             } else {
 
-              doError(response, "Could not update index.html", 500);
+              doError("Could not update index.html", 500, callback);
               return;
             }
           });
@@ -324,7 +323,7 @@ function httpDELETEExecute(uri, response) {
 
     }else{
 
-      doError(response,"resource does not exist", 500);
+      doError("resource does not exist", 500, callback);
       return;
     }
   });
@@ -388,22 +387,23 @@ function removeFromIndexHTML(uri, indexHTML) {
 
 function isPostPutDataValid(data) {
 
-  if( data.hasOwnProperty("elementName") &&
-      data.hasOwnProperty("elementSymbol") &&
-      data.hasOwnProperty("elementAtomicNumber") &&
-      data.hasOwnProperty("elementDescription")) {
-
-    return true;
-  }
-
-  return false;
+  return (data.hasOwnProperty("elementName") &&
+          data.hasOwnProperty("elementSymbol") &&
+          data.hasOwnProperty("elementAtomicNumber") &&
+          data.hasOwnProperty("elementDescription"));
 };
 
 function clientConnected(request, response) { //'request' listener
 
+  function respond(status, body) {
+
+    response.statusCode = status;
+    response.end(body);
+  }
+
   if(!SUPPORTED_HTTP_METHODS.hasOwnProperty(request.method)) {
 
-    doError(response, null, 405);
+    doError(null, 405, respond);
     return;
   }
 
@@ -411,35 +411,42 @@ function clientConnected(request, response) { //'request' listener
 
     if(Date.parse(request.headers["if-modified-since"]) > Date.parse(CONTENT_MODIFICATION_DATE)) {
 
-      doError(response, null, 304);
+      doError(null, 304, respond);
       return;
     }
   }
 
-  if(request.method === SUPPORTED_HTTP_METHODS.HEAD) {
+  switch(request.method) {
 
-    response.end();
-  }
+    case SUPPORTED_HTTP_METHODS.HEAD:
 
-  if(request.method === SUPPORTED_HTTP_METHODS.GET) {
+      response.end();
+      break;
 
-    doGET(request, response);
-  }
+    case SUPPORTED_HTTP_METHODS.GET:
 
-  if(request.method === SUPPORTED_HTTP_METHODS.POST) {
+      doGET(request, respond);
+      break;
 
-    doPOST(request, response);
-  }
+    case SUPPORTED_HTTP_METHODS.POST:
 
-  if(request.method === SUPPORTED_HTTP_METHODS.PUT) {
+      doPOST(request, respond);
+      break;
 
-    doPUT(request, response);
-  }
+    case SUPPORTED_HTTP_METHODS.PUT:
 
-  if(request.method === SUPPORTED_HTTP_METHODS.DELETE) {
+      doPUT(request, respond);
+      break;
 
-    doDELETE(request,response);
-  }
+    case SUPPORTED_HTTP_METHODS.DELETE:
+
+      doDELETE(request, respond);
+      break;
+
+    default:
+
+      doError("Could not identify HTTP method", 400, respond);
+  };
 };
 
 var server = http.createServer(clientConnected);
