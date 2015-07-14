@@ -15,6 +15,7 @@ var SUPPORTED_HTTP_METHODS = {
   GET: "GET",
   POST: "POST",
   PUT: "PUT",
+  DELETE: "DELETE",
   HEAD: "HEAD"
 };
 
@@ -30,6 +31,18 @@ function writeFileToResponse(response, uri) {
     response.write(data);
     response.end();
     console.log("served " + uri);
+  });
+};
+
+function writeFileToFileSystem(fileName, content, response) {
+
+  fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
+
+    if(error) {
+
+      doError(response, error, 500);
+      return;
+    }
   });
 };
 
@@ -112,7 +125,18 @@ function doPOST(request, response) {
       return;
     }
 
-    httpPOSTTransformFiles(postData, response);
+    fs.exists(PUBLIC_DIRECTORY + postData.elementName.toLowerCase() + HTML_SUFFIX, function(exists) {
+
+      if(exists) {
+
+        doError(response, "Please use PUT to update an existing resource", 500);
+        return;
+
+      } else {
+
+        httpPOSTPrepareContent(postData, response);
+      }
+    });
   });
 };
 
@@ -135,36 +159,52 @@ function doPUT(request, response) {
       return;
     }
 
-    httpPUTProcessFile(putData, response);
-  })
-
-};
-
-function writeFileToFileSystem(fileName, content, response) {
-
-  fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
-
-    if(error) {
-
-      doError(response, error, 500);
-    }
+    httpPUTPrepareContent(putData, response);
   });
 };
 
-function httpPOSTTransformFiles(postData, response) {
+function doDELETE(request, response) {
+
+  var uri = request.url.toLowerCase() + HTML_SUFFIX;
+  console.log(uri);
+
+  if(uri === "/" || uri === "index.html") {
+
+    doError(response, "Cannot delete index.html", 403);
+    return;
+  }
+
+  httpDELETEExecute(uri, response);
+
+  // request.on('end', function() {
+
+  //   if(!request.url) {
+
+  //     doError(response, "Invalid data submitted to DELETE.", 400);
+  //     return;
+  //   }
+
+  //   httpDELETEExecute(uri, response);
+  // });
+};
+
+function httpPOSTPrepareContent(postData, response) {
 
   fs.exists(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, function(exists) {
 
     if(exists) {
 
-      fs.readFile(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, 'utf8', function (error, text) {
+      fs.readFile(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, 'utf8', function (error, indexHTML) {
 
         if(error) {
 
           doError(response, error, 500);
         }
 
-        processPost(postData, text, response);
+        var elementHTML = getElementHTML(postData);
+        indexHTML = addToIndexHTML(postData, indexHTML);
+
+        httpPOSTExecute(postData, indexHTML, elementHTML, response);
       });
 
     } else {
@@ -174,36 +214,27 @@ function httpPOSTTransformFiles(postData, response) {
   });
 };
 
-function httpPUTProcessFile(putData, response) {
+function httpPUTPrepareContent(putData, response) {
 
   var uri = putData.elementName.toLowerCase();
+  var elementHTML = null;
 
   fs.exists(PUBLIC_DIRECTORY + uri + HTML_SUFFIX, function(exists) {
 
     if(exists) {
 
-      processPut(putData, response);
+      elementHTML = getElementHTML(putData);
+      httpPUTExecute(putData, elementHTML, response);
 
     } else {
 
       doError(response, '{ "error" : "resource does not exist" }', 500);
+      return;
     }
   })
 };
 
-function processPost(postData, indexHTML, response) {
-
-  fs.exists(PUBLIC_DIRECTORY + postData.elementName.toLowerCase() + HTML_SUFFIX, function(exists) {
-
-    if(!exists) {
-
-      doError(response, "Please use PUT to update an existing resource", 500);
-      return;
-    }
-  });
-
-  var elementHTML = getElementHTML(postData);
-  indexHTML = getIndexHTML(postData, indexHTML);
+function httpPOSTExecute(postData, indexHTML, elementHTML, response) {
 
   if(elementHTML && indexHTML) {
 
@@ -211,36 +242,103 @@ function processPost(postData, indexHTML, response) {
     writeFileToFileSystem(INDEX_FILENAME, indexHTML, response);
     response.setHeader("Content-Type", "application/json");
     response.write('{"success" : true}');
+    response.end();
 
   } else {
 
     doError(response, null, 500);
     return;
   }
-
-  response.end();
 };
 
-function processPut(putData, response) {
-
-  var elementHTML = getElementHTML(putData);
+function httpPUTExecute(putData, elementHTML, response) {
 
   if(elementHTML) {
 
-    writeFileToFileSystem(putData,elementName.toLowerCase(), elementHTML, response);
+    writeFileToFileSystem(putData.elementName.toLowerCase(), elementHTML, response);
     response.setHeader("Content-Type", "application/json");
     response.write('{"success" : true}');
+    response.end();
 
   } else {
 
     doError(response, null, 500);
     return;
   }
-
-  response.end();
 };
 
-function getIndexHTML(postData, indexHTML) {
+function httpDELETEExecute(uri, response) {
+
+  fs.exists(PUBLIC_DIRECTORY + uri, function(exists){
+
+    if(exists) {
+
+      fs.unlink(PUBLIC_DIRECTORY + uri, function(error) {
+
+        if(error) {
+
+          doError(response, "Server could not delete file", 500);
+          return;
+
+        } else {
+
+          var indexPath = PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX;
+
+          fs.exists(indexPath, function(exists) {
+
+            if(exists) {
+
+              fs.readFile(indexPath, 'utf8', function (error, indexHTML) {
+
+                if(error) {
+
+                  doError(response, error, 500);
+                  return;
+                }
+
+                indexHTML = removeFromIndexHTML(uri, indexHTML);
+
+                if(indexHTML) {
+
+                  writeFileToFileSystem(INDEX_FILENAME, indexHTML, response);
+
+                } else {
+
+                  doError(response,"Could not write to index", 500);
+                  return;
+                }
+
+                response.setHeader("Content-Type", "application/json");
+                response.write('{"success" : true}');
+                response.end();
+              });
+
+            } else {
+
+              doError(response, "Could not update index.html", 500);
+              return;
+            }
+          });
+        }
+      });
+
+    }else{
+
+      doError(response,"resource does not exist", 500);
+      return;
+    }
+  });
+};
+
+function getElementHTML(data) {
+
+  return  "<!DOCTYPE html> <html lang='en'> <head> <meta charset='UTF-8'> <title>The Elements - " + data.elementName +
+          "</title> <link rel='stylesheet' href='/css/styles.css'> </head> <body> <h1>" + data.elementName +
+          "</h1> <h2>" + data.elementSymbol + "</h2> <h3>Atomic number " + data.elementAtomicNumber +
+          "</h3> <p>"+ data.elementDescription + '</p> <p><a href="/">back</a></p> </body> </html>';
+};
+
+function addToIndexHTML(postData, indexHTML) {
 
   var out = null;
   var h3Index1 = indexHTML.indexOf("<h3>");
@@ -261,19 +359,31 @@ function getIndexHTML(postData, indexHTML) {
   out = foreString + '<li><a href="/' + postData.elementName.toLowerCase() + HTML_SUFFIX + '">' + postData.elementName +
         '</a></li>' + backString;
 
-  // console.log("INDEX : " + out);
-
   return out;
 };
 
-function getElementHTML(data) {
+function removeFromIndexHTML(uri, indexHTML) {
 
-  console.log(data.elementDescription);
+  var out = null;
+  var h3Index1 = indexHTML.indexOf("<h3>");
+  var h3Index2 = indexHTML.indexOf("</h3>");
+  var foreString = indexHTML.substring(0, h3Index1 + 4);
+  var backString = indexHTML. substring(h3Index2);
+  var textString = indexHTML.substring(h3Index1 + 4, h3Index2);
+  var areIndex = textString.lastIndexOf("are");
+  var numberString = textString.substring(areIndex + 3);
+  var parsedNumber = parseInt(numberString);
 
-  return  "<!DOCTYPE html> <html lang='en'> <head> <meta charset='UTF-8'> <title>The Elements - " + data.elementName +
-          "</title> <link rel='stylesheet' href='/css/styles.css'> </head> <body> <h1>" + data.elementName +
-          "</h1> <h2>" + data.elementSymbol + "</h2> <h3>Atomic number " + data.elementAtomicNumber +
-          "</h3> <p>"+ data.elementDescription + '</p> <p><a href="/">back</a></p> </body> </html>';
+  out = foreString + "These are "+ (parsedNumber - 1) + backString;
+
+  var uriIndex = out.indexOf(uri);
+  foreString = out.substring(0, uriIndex);
+  backString = out.substring(uriIndex);
+  var foreLIIndex = foreString.lastIndexOf("<li>");
+  var backLIIndex = backString.indexOf("</li>");
+  out = foreString.substring(0, foreLIIndex) + backString.substring(backLIIndex + 5);
+
+  return out;
 };
 
 function isPostPutDataValid(data) {
@@ -325,11 +435,16 @@ function clientConnected(request, response) { //'request' listener
 
     doPUT(request, response);
   }
+
+  if(request.method === SUPPORTED_HTTP_METHODS.DELETE) {
+
+    doDELETE(request,response);
+  }
 };
 
 var server = http.createServer(clientConnected);
 
-server.listen(PORT,function() {
+  server.listen(PORT,function() {
 
-  console.log('server bound to ' + PORT);
+    console.log('server bound to ' + PORT);
 });
