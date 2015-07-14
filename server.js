@@ -94,7 +94,6 @@ function doGET(request, callback) {
 
     if(exists){
 
-      // writeFileToResponse(response, uri);
       writeFileToResponse(uri, function(error, data) {
 
         if(error) {
@@ -156,7 +155,7 @@ function doPOST(request, callback) {
   });
 };
 
-function doPUT(request, response) {
+function doPUT(request, callback) {
 
   var requestBody = "";
 
@@ -171,11 +170,11 @@ function doPUT(request, response) {
 
     if(!isPostPutDataValid(putData)) {
 
-      doError(response, "Invalid data submitted to PUT.", 400);
+      doError("Invalid data submitted to PUT.", 400, callback);
       return;
     }
 
-    httpPUTPrepareContent(putData, response);
+    httpPUTPrepareContent(putData, callback);
   });
 };
 
