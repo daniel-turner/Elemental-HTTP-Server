@@ -53,6 +53,13 @@ function writeFileToResponse(uri, callback) {
 
 };
 
+/**
+ * Writes the given content to the file system
+ * @param  {[type]}   fileName [description]
+ * @param  {[type]}   content  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function writeFileToFileSystem(fileName, content, callback) {
 
   fs.writeFile(PUBLIC_DIRECTORY + fileName + HTML_SUFFIX, content, function(error){
@@ -65,12 +72,24 @@ function writeFileToFileSystem(fileName, content, callback) {
   });
 };
 
-
+/**
+ * Utility function for reporting errors
+ * @param  {[type]}   error      [description]
+ * @param  {[type]}   statusCode [description]
+ * @param  {Function} callback   [description]
+ * @return {[type]}              [description]
+ */
 function doError(error, statusCode, callback) {
 
   callback(statusCode, error);
 };
 
+/**
+ * Utility function for reporting 404 errors. Should be refactored to
+ * accommodate any error with a html page.
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function do404(callback) {
 
   var uri = "404.html";
@@ -81,6 +100,12 @@ function do404(callback) {
   });
 };
 
+/**
+ * Handles GET functionality
+ * @param  {[type]}   request  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function doGET(request, callback) {
 
   var uri = request.url.toLowerCase();
@@ -90,29 +115,25 @@ function doGET(request, callback) {
     uri = "index.html";
   }
 
-  fs.exists(PUBLIC_DIRECTORY + uri, function(exists) {
+  writeFileToResponse(uri, function(error, data) {
 
-    if(exists){
+    if(error) {
 
-      writeFileToResponse(uri, function(error, data) {
+      callback(error.status, error.message);
 
-        if(error) {
+    } else {
 
-          callback(error.status, error.message);
-
-        } else {
-
-          callback(200, data);
-        }
-      });
-
-    }else{
-
-      do404(callback);
+      callback(200, data);
     }
   });
 };
 
+/**
+ * Reads POST data and handles backend POST functionality
+ * @param  {[type]}   request  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function doPOST(request, callback) {
 
   var uri = request.url.toLowerCase();
@@ -155,6 +176,12 @@ function doPOST(request, callback) {
   });
 };
 
+/**
+ * Reads PUT data and handles backend PUT functionality
+ * @param  {[type]}   request  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function doPUT(request, callback) {
 
   var requestBody = "";
@@ -178,6 +205,12 @@ function doPUT(request, callback) {
   });
 };
 
+/**
+ * Handles DELETE functionality
+ * @param  {[type]}   request  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function doDELETE(request, callback) {
 
   var uri = request.url.toLowerCase() + HTML_SUFFIX;
@@ -191,6 +224,12 @@ function doDELETE(request, callback) {
   httpDELETEExecute(uri, callback);
 };
 
+/**
+ * Reads and transforms html content and passes it on to be written
+ * @param  {[type]}   postData [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function httpPOSTPrepareContent(postData, callback) {
 
   fs.exists(PUBLIC_DIRECTORY + INDEX_FILENAME + HTML_SUFFIX, function(exists) {
@@ -217,6 +256,12 @@ function httpPOSTPrepareContent(postData, callback) {
   });
 };
 
+/**
+ * Reads and transforms html content and passes it on to be written
+ * @param  {[type]}   putData  [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function httpPUTPrepareContent(putData, callback) {
 
   var uri = putData.elementName.toLowerCase();
@@ -237,6 +282,14 @@ function httpPUTPrepareContent(putData, callback) {
   })
 };
 
+/**
+ * Writes the given content to the file system and reports completion to callback
+ * @param  {[type]}   postData    [description]
+ * @param  {[type]}   indexHTML   [description]
+ * @param  {[type]}   elementHTML [description]
+ * @param  {Function} callback    [description]
+ * @return {[type]}               [description]
+ */
 function httpPOSTExecute(postData, indexHTML, elementHTML, callback) {
 
   if(elementHTML && indexHTML) {
@@ -252,6 +305,13 @@ function httpPOSTExecute(postData, indexHTML, elementHTML, callback) {
   }
 };
 
+/**
+ * Writes the given content to the file system and reports completion to callback
+ * @param  {[type]}   putData     [description]
+ * @param  {[type]}   elementHTML [description]
+ * @param  {Function} callback    [description]
+ * @return {[type]}               [description]
+ */
 function httpPUTExecute(putData, elementHTML, callback) {
 
   if(elementHTML) {
@@ -267,6 +327,12 @@ function httpPUTExecute(putData, elementHTML, callback) {
   }
 };
 
+/**
+ * Deletes the requested file and updates index.html
+ * @param  {[type]}   uri      [description]
+ * @param  {Function} callback [description]
+ * @return {[type]}            [description]
+ */
 function httpDELETEExecute(uri, callback) {
 
   fs.exists(PUBLIC_DIRECTORY + uri, function(exists){
